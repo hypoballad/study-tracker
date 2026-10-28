@@ -1,0 +1,13 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {day,date,stats,validateBook,validateData} from './core.js';import {initial} from './store.js';
+const book=(extra={})=>({id:'a',title:'テスト',category:'行政書士',total:100,start:0,current:50,startDate:'2026-10-01',targetDate:'2026-10-11',memo:'',...extra});
+test('0ページ開始・線形進捗・必要/実績ペース',()=>{const s=stats(book(),[],'2026-10-06');assert.equal(s.percent,50);assert.equal(s.required,10);assert.equal(s.pace,10);assert.equal(s.difference,0);assert.equal(s.forecast,'2026-10-11');});
+test('途中ページから開始',()=>assert.equal(stats(book({start:20,current:60}),[],'2026-10-06').percent,50));
+test('読了',()=>{const s=stats(book({current:100}),[],'2026-10-11');assert.equal(s.percent,100);assert.equal(s.required,0);assert.equal(s.remaining,0);});
+test('期限超過',()=>{const s=stats(book(),[],'2026-10-12');assert.equal(s.required,null);assert.equal(s.difference,-50);});
+test('同日開始・期限・ゼロ除算なし',()=>{const s=stats(book({startDate:'2026-10-11'}),[],'2026-10-11');assert.equal(s.required,50);assert.equal(s.pace,50);assert.equal(s.difference,-50);});
+test('進捗なし・未設定・開始前',()=>{assert.equal(stats(book({current:0}),[],'2026-10-06').forecast,null);assert.equal(stats(book({total:null}),[]).ready,false);assert.equal(stats(book(),[],'2026-09-30').forecast,null);});
+test('ページ誤入力と日付',()=>{for(const b of [book({current:101}),book({start:100}),book({current:-1}),book({total:1.5}),book({targetDate:'2026-02-30'})])assert.throws(()=>validateBook(b));});
+test('年末・月末・うるう日の日付単位',()=>{assert.equal(day('2027-01-01')-day('2026-12-31'),1);assert.equal(day('2026-11-01')-day('2026-10-31'),1);assert.equal(day('2028-03-01')-day('2028-02-28'),2);assert.equal(date(day('2026-12-31')+1),'2027-01-01');});
+test('履歴基準のペース・時間・過去修正',()=>{const logs=[{date:'2026-10-03',page:20,minutes:60},{date:'2026-10-06',page:50,minutes:60}];assert.equal(stats(book(),logs,'2026-10-10').pace,10);assert.equal(stats(book(),logs,'2026-10-10').hourly,25);logs[0].page=60;assert.equal(stats(book(),logs,'2026-10-10').consistent,false);});
+test('バックアップ往復・複数書籍・参照/重複の検証',()=>{const d=initial();d.books.push(book());assert.deepEqual(validateData(JSON.parse(JSON.stringify(d))),d);const log={id:'x',bookId:'a',date:'2026-10-03',page:50,minutes:0,memo:''};d.logs.push(log);validateData(d);d.logs.push({...log,id:'y'});assert.throws(()=>validateData(d));assert.throws(()=>validateData({...d,version:2}));});
+test('最新履歴と現在ページの不整合を拒否',()=>assert.throws(()=>validateData({version:1,books:[book()],logs:[{id:'x',bookId:'a',date:'2026-10-03',page:40,minutes:null,memo:''}]})));
